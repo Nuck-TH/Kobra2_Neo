@@ -51,7 +51,26 @@ void MarlinHAL::set_pwm_duty(const pin_t pin, const uint16_t v, const uint16_t v
 
     // Note the resolution is sticky here, the input can be upto 16 bits and that would require RESOLUTION_16B_COMPARE_FORMAT (16)
     // If such a need were to manifest then we would need to calc the resolution based on the v_size parameter and add code for it.
-    HT->setCaptureCompare(channel, duty, RESOLUTION_8B_COMPARE_FORMAT); // Set the duty, the calc is done in the library :)
+    
+    const PinName fan_pin_name = digitalPinToPinName(pin_t(FAN_PIN));
+    const uint32_t fan_channel = STM_PIN_CHANNEL(pinmap_function(fan_pin_name, PinMap_PWM));
+    if( (pin_name == fan_pin_name) && (channel == fan_channel) ) { //PB5 TIM3 CH2
+      int16_t duty_calc = 0;
+      if(duty < 5) { //0..5 f(x) = 72.2824 * (x)/5 Rup
+        duty_calc = 72 * int32_t(duty) / 5 + 1;
+      } else if(duty < 145) { //5..145 f(x) = (168.6589*x + 9276.2348)/140 Rdown
+        duty_calc = (169 * int32_t(duty) + 9276) / 140;
+      } else if(duty < 200) { //145..200 f(x) = (481.8823*x - 56621.1675)/55 Rdown
+        duty_calc = (482 * int32_t(duty) - 56621) / 55;
+      } else { //200..255 f(x) = (3373.1765*x - 634880.0075)/55 Rup
+        duty_calc = (3373 * int32_t(duty) - 634880) / 55 + 1;
+      }
+      duty_calc = duty_calc < 0 ? 0 : ( duty_calc > 4095 ? 4095 : duty_calc );
+      HT->setCaptureCompare(channel, duty_calc, RESOLUTION_12B_COMPARE_FORMAT);
+    } else { //any other
+      HT->setCaptureCompare(channel, duty, RESOLUTION_8B_COMPARE_FORMAT); // Set the duty, the calc is done in the library :)
+    }
+    
     pinmap_pinout(pin_name, PinMap_PWM); // Make sure the pin output state is set.
     if (previousMode != TIMER_OUTPUT_COMPARE_PWM1) HT->resume();
   }
